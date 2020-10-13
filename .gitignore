@@ -3,3 +3,6 @@ pt-env/
 
 # code editor environment
 .vscode
+
+# pycache
+__pycache__

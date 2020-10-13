@@ -5,14 +5,18 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 
-from PIL import Image
+
 import matplotlib.pyplot as plt
 
-import torchvision.transforms as transforms
 import torchvision.models as models
 
 import copy
 import os
+import util
+
+# TODO: add layer specific weights
+# TODO: add tv loss
+# TODO: add command line flags (?)
 
 # set device
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -20,47 +24,16 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 # desired size of the output image
 imsize = 512 if torch.cuda.is_available() else 128  # use small size if no gpu
 
-loader = transforms.Compose(
-    [transforms.Resize(imsize), transforms.ToTensor()]  # scale imported image
-)  # transform it into a torch tensor
 
+CONTENT_IMG_NAME = "lion.jpg"
+STYLE_IMG_NAME = "starry-night.jpg"
+NUM_ITERS = 300
+OUTPUT_NAME = "test"
+USE_AVG_POOL = True
 
-def image_loader(image_name):
-    image = Image.open(image_name)
-    # fake batch dimension required to fit network's input dimensions
-    image = loader(image).unsqueeze(0)
-    return image.to(device, torch.float)
-
-
-style_img = image_loader("./inputs/picasso.jpg")
-content_img = image_loader("./inputs/dancing.jpg")
-
-assert (
-    style_img.size() == content_img.size()
-), "we need to import style and content images of the same size"
-
-unloader = transforms.ToPILImage()  # reconvert into PIL image
-
-
-def imshow(tensor, title=None):
-    image = tensor.cpu().clone()  # we clone the tensor to not do changes on it
-    image = image.squeeze(0)  # remove the fake batch dimension
-    image = unloader(image)
-    plt.imshow(image)
-    if title is not None:
-        plt.title(title)
-    plt.pause(0.001)  # pause a bit so that plots are updated
-
-
-def imsave(tensor, name, output_dir="output", type="png"):
-    image = tensor.cpu().clone()  # we clone the tensor to not do changes on it
-    image = image.squeeze(0)  # remove the fake batch dimension
-    image = unloader(image)
-    img_name = f"{output_dir}/{name}.{type}"
-    output_dir = os.path.join(os.getcwd(), output_dir)
-    if not os.path.exists(output_dir):
-        os.mkdir(output_dir)
-    image.save(img_name)
+loader = util.ImageLoader(imsize, device)
+content_img = loader.load_content_img(CONTENT_IMG_NAME)
+style_img = loader.load_style_img(STYLE_IMG_NAME)
 
 
 class ContentLoss(nn.Module):
@@ -126,8 +99,9 @@ class Normalization(nn.Module):
 
 
 # desired depth layers to compute style/content losses :
-content_layers_default = ["conv_4"]
-style_layers_default = ["conv_1", "conv_2", "conv_3", "conv_4", "conv_5"]
+content_layers_default = ["conv4_2"]
+style_layers_default = ['relu1_1', 'relu2_1',
+                                 'relu3_1', 'relu4_1', 'relu5_1']
 
 
 def get_style_model_and_losses(
@@ -153,21 +127,28 @@ def get_style_model_and_losses(
     # to put in modules that are supposed to be activated sequentially
     model = nn.Sequential(normalization)
 
-    i = 0  # increment every time we see a conv
+    i = 1 # increment every time we see a conv
+    j = 0 # increment every time we see a pool
+    style_ind = 0
+    content_ind = 0
     for layer in cnn.children():
         if isinstance(layer, nn.Conv2d):
-            i += 1
-            name = "conv_{}".format(i)
+            j += 1
+            name = "conv{}_{}".format(i,j)
         elif isinstance(layer, nn.ReLU):
-            name = "relu_{}".format(i)
+            name = "relu{}_{}".format(i,j)
             # The in-place version doesn't play very nicely with the ContentLoss
             # and StyleLoss we insert below. So we replace with out-of-place
             # ones here.
             layer = nn.ReLU(inplace=False)
         elif isinstance(layer, nn.MaxPool2d):
-            name = "pool_{}".format(i)
+            if USE_AVG_POOL:
+                layer = nn.AvgPool2d(layer.kernel_size)
+            name = "pool{}".format(i)
+            i += 1
+            j = 0
         elif isinstance(layer, nn.BatchNorm2d):
-            name = "bn_{}".format(i)
+            name = "bn{}_{}".format(i,j)
         else:
             raise RuntimeError(
                 "Unrecognized layer: {}".format(layer.__class__.__name__)
@@ -179,15 +160,17 @@ def get_style_model_and_losses(
             # add content loss:
             target = model(content_img).detach()
             content_loss = ContentLoss(target)
-            model.add_module("content_loss_{}".format(i), content_loss)
+            model.add_module("content_loss_{}".format(content_ind), content_loss)
             content_losses.append(content_loss)
+            content_ind += 1
 
         if name in style_layers:
             # add style loss:
             target_feature = model(style_img).detach()
             style_loss = StyleLoss(target_feature)
-            model.add_module("style_loss_{}".format(i), style_loss)
+            model.add_module("style_loss_{}".format(style_ind), style_loss)
             style_losses.append(style_loss)
+            style_ind += 1
 
     # now we trim off the layers after the last content and style losses
     for i in range(len(model) - 1, -1, -1):
@@ -218,8 +201,8 @@ def run_style_transfer(
     style_img,
     input_img,
     num_steps=300,
-    style_weight=1000000,
-    content_weight=1,
+    style_weight=1e6,
+    content_weight=5e0,
 ):
     """Run the style transfer."""
     print("Building the style transfer model..")
@@ -279,7 +262,8 @@ output = run_style_transfer(
     content_img,
     style_img,
     input_img,
+    num_steps=NUM_ITERS
 )
 
 plt.figure()
-imsave(output, name="test")
+loader.imsave(output, name=OUTPUT_NAME)
