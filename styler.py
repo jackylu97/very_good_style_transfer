@@ -11,10 +11,6 @@ import os
 
 from model import build_model_and_losses
 
-# TODO: add layer specific weights
-# TODO: add command line flags (?)
-# TODO: add multiple style images with weights
-
 # set device
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
