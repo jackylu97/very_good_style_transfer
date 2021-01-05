@@ -4,29 +4,19 @@ import torch
 import torch.optim as optim
 import torchvision.models as models
 
-import matplotlib.pyplot as plt
-
 from dataclasses import dataclass, field
 from typing import List
 import copy
 import os
 
-import util
 from model import build_model_and_losses
 
 # TODO: add layer specific weights
 # TODO: add command line flags (?)
+# TODO: add multiple style images with weights
 
 # set device
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-# desired size of the output image
-imsize = 512 if torch.cuda.is_available() else 128  # use small size if no gpu
-
-
-CONTENT_IMG_NAME = "lion.jpg"
-STYLE_IMG_NAME = "starry-night.jpg"
-OUTPUT_NAME = "test"
 
 @dataclass
 class StyleConfig:
@@ -41,6 +31,10 @@ class StyleConfig:
 
 
 class Styler:
+    '''
+    Initialize with a StyleConfig instance. 
+    See style_single_image.py for an example of usage.
+    '''
     def __init__(self, cfg):
         self.cfg = cfg
 
@@ -48,7 +42,7 @@ class Styler:
         # this line to show that input is a parameter that requires a gradient
         optimizer = optim.LBFGS([input_img.requires_grad_()])
         return optimizer
-    
+
     def style(self, content_img, style_img):
         input_img = content_img.clone()
         # if you want to use white noise instead uncomment the below line:
@@ -109,19 +103,3 @@ class Styler:
         input_img.data.clamp_(0, 1)
 
         return input_img
-
-
-loader = util.ImageLoader(imsize, device)
-content_img = loader.load_content_img(CONTENT_IMG_NAME)
-style_img = loader.load_style_img(STYLE_IMG_NAME)
-
-default_config = StyleConfig()
-styler = Styler(default_config)
-
-output = styler.style(
-    content_img,
-    style_img,
-)
-
-plt.figure()
-loader.imsave(output, name=OUTPUT_NAME)
