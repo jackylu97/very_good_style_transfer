@@ -6,7 +6,7 @@ Builds off of example code from https://pytorch.org/tutorials/advanced/neural_st
 
 ### Quickstart 
 Style an image in ~10 lines of code (see `style_single_image.py`):
-```
+```python
 # desired size of the output image
 imsize = 512
 
@@ -31,7 +31,6 @@ TODO:
 - add ability to use multiple style images with weights
 - add option to normalize weights
 - add option to normalize gradients
-- add script that implements multi-scale rendering
 - callback system to add intermediate computations between style transfer iterations
 - basic image/canvas manipulation commands
 - figure out looping zoom ? 
