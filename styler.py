@@ -55,10 +55,14 @@ class Styler:
         optimizer = optim.LBFGS([input_img.requires_grad_()])
         return optimizer
 
-    def style(self, content_img, style_img):
-        input_img = content_img.clone()
-        # if you want to use white noise instead uncomment the below line:
-        # input_img = torch.randn(content_img.data.size(), device=device)
+    def style(self, content_img, style_img, init_img=None):
+
+        input_img = torch.randn(content_img.data.size(), device=self.device)
+        if init_img != None:
+            input_img = init_img.clone()
+        # Comment next two lines to use random noise as input
+        else:
+            input_img = content_img.clone()
 
         print("Building the style transfer model..")
         model, style_losses, content_losses, tv_loss = build_model_and_losses(

@@ -2,6 +2,7 @@ import torch
 import torchvision.transforms as transforms
 
 from PIL import Image
+from dataclasses import is_dataclass
 import os
 
 CONTENT_PATH = "./content/{}"
@@ -10,23 +11,22 @@ OUTPUT_DIR = "output"
 OUTPUT_PATH = f"./{OUTPUT_DIR}/{{}}"
 
 def calc_img_size(size, mx):
-    # get height, width with same aspect ratio, given that no dimension can exceed mx
-    assert len(size) == 2, "image should have dim=2 !!"
+    # get height, width with same aspect ratio, setting the larger dimension to mx
+    assert len(size) == 2, f"image should have dim=2 !! got {size}"
     h, w = size
 
-    if h > w and h > mx:
+    if h > w:
         w = (float(mx) / float(h)) * w
         return (int(w), mx)
-    if w > mx:
+    else:
         h = (float(mx) / float(w)) * h
         return (mx, int(h))
-    return (h, w)
 
 def calc_octave_resolution(initial_resolution, octave):
     '''
     Double in size every 2 octaves
     '''
-    return int(initial_resolution * 1.415 ** (octave - 1))
+    return int(initial_resolution * 1.415 ** (octave))
 
 class ImageLoader:
 
@@ -44,12 +44,24 @@ class ImageLoader:
     def init_loaders(self, imsize):
         self.imsize = imsize
         self.loader = transforms.Compose(
-            [transforms.Resize(imsize, interpolation=Image.BILINEAR),
-             transforms.ToTensor()]  # scale imported image
-        )  # transform it into a torch tensor
+            [transforms.Resize(imsize, interpolation=Image.BILINEAR), # scale imported image
+             transforms.ToTensor()]  # transform it into a torch tensor
+        )
         self.unloader = transforms.ToPILImage()  # reconvert into PIL image
 
-    def load_content_style_imgs(self, content_img_name, style_img_name, octave=1.0):
+    def resize_image_octave(self, image, octave):
+        # torch tensor -> PIL.Image -> resize -> back to torch tensor
+        # there might be an easier way to do this but. eh.
+        image = self.unload(image)
+        octave_resolution = calc_octave_resolution(self.max_dimsize, octave)
+        imsize = calc_img_size(image.size, octave_resolution)
+        t = transforms.Compose(
+            [transforms.Resize(imsize, interpolation=Image.BILINEAR), # scale imported image
+             transforms.ToTensor()]  # transform it into a torch tensor
+        )
+        return t(image).unsqueeze(0).to(self.device, torch.float)
+
+    def load_content_style_imgs(self, content_img_name, style_img_name, octave=0.0):
         '''
         Always couple loading content/style images, since they need to be the same size anyways
         '''
@@ -74,13 +86,27 @@ class ImageLoader:
 
         return content_image, style_image
 
-    def imsave(self, tensor, name, filetype="png"):
+    def unload(self, tensor):
+        image = tensor.cpu().clone()  # we clone the tensor to not do changes on it
+        image = image.squeeze(0)  # remove the fake batch dimension
+        image = self.unloader(image)
+        return image
+
+    def imsave(self, tensor, name, filetype="png", config=None):
+        '''
+        Optionally supply a config to save corresponding StyleConfigs to a text file with
+        the same name.
+        '''
         image = tensor.cpu().clone()  # we clone the tensor to not do changes on it
         image = image.squeeze(0)  # remove the fake batch dimension
         image = self.unloader(image)
         img_name = self.output_path(f"{name}.{filetype}")
         if not os.path.exists(os.path.abspath(OUTPUT_DIR)):
             os.mkdir(OUTPUT_DIR)
+        if config:
+            assert is_dataclass(config)
+            with open(f'{name}.txt', 'w') as file:
+                file.write(json.dumps(asdict(config)))
         image.save(img_name)
 
     def content_img_path(self, image_name):
