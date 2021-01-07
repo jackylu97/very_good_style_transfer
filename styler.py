@@ -27,6 +27,14 @@ class StyleConfig:
                                     ['relu1_1', 'relu2_1', 'relu3_1', 'relu4_1', 'relu5_1'])
     style_layer_weights: List[int] = field(default_factory=lambda: [1.0, 2.0, 4.0, 8.0, 8.0])
 
+    def update(self, **kwargs):
+        '''
+        Convenient update function, due to the numerous arguments in StyleConfig.
+        '''
+        for key, value in kwargs.items():
+            if hasattr(self, key):
+                setattr(self, key, value)
+
 
 class Styler:
     '''
