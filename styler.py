@@ -16,23 +16,33 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 @dataclass
 class StyleConfig:
+    '''
+    Style Transfer settings. One config per Styler instance.
+    '''
+    # pylint: disable=too-many-instance-attributes
     num_iters: int = 250
     use_avg_pool: bool = True
     content_weight: int = 5e0
     style_weight: int = 1e6
-    tv_weight: int = 5e5
+    tv_weight: int = 1e-4
     content_layers: List[str] = field(default_factory=lambda: ["conv4_2"])
     style_layers: List[str] = field(default_factory=lambda:
                                     ['relu1_1', 'relu2_1', 'relu3_1', 'relu4_1', 'relu5_1'])
+    style_layer_weights: List[int] = field(default_factory=lambda: [1.0, 2.0, 4.0, 8.0, 8.0])
 
 
 class Styler:
     '''
-    Initialize with a StyleConfig instance. 
+    Initialize with a StyleConfig instance.
     See style_single_image.py for an example of usage.
     '''
     def __init__(self, cfg):
+        self._validate_config(cfg)
         self.cfg = cfg
+
+    def _validate_config(self, cfg):
+        assert len(cfg.style_layers) == len(cfg.style_layer_weights), (
+            "style layer weights must correspond to style layers!")
 
     def get_input_optimizer(self, input_img):
         # this line to show that input is a parameter that requires a gradient
@@ -51,7 +61,7 @@ class Styler:
             content_img,
             self.cfg.use_avg_pool,
             self.cfg.content_layers,
-            self.cfg.style_layers
+            self.cfg.style_layers,
         )
         optimizer = self.get_input_optimizer(input_img)
 
@@ -69,8 +79,8 @@ class Styler:
                 content_score = 0
                 tv_score = 0
 
-                for sl in style_losses:
-                    style_score += sl.loss
+                for sl, weight in zip(style_losses, self.cfg.style_layer_weights):
+                    style_score += sl.loss * weight
                 for cl in content_losses:
                     content_score += cl.loss
 

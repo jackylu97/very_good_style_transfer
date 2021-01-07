@@ -53,9 +53,9 @@ class TotalVariationLoss(nn.Module):
 
     def forward(self, input):
         b, c, h, w = input.size()
-        w_variance = torch.sum(torch.pow(input[:, :, :, :-1] - input[:, :, :, 1:], 2))
-        h_variance = torch.sum(torch.pow(input[:, :, :-1, :] - input[:, :, 1:, :], 2))
-        self.loss = (w_variance + h_variance) / (b * c * h * w) ** 2
+        w_variance = torch.sum(torch.abs(input[:, :, :, :-1] - input[:, :, :, 1:]) / 256.0)
+        h_variance = torch.sum(torch.abs(input[:, :, :-1, :] - input[:, :, 1:, :]) / 256.0)
+        self.loss = (w_variance + h_variance)
         return input
 
 # create a module to normalize input image so we can easily put it in a
@@ -73,15 +73,16 @@ class Normalization(nn.Module):
         # normalize img
         return (img - self.mean) / self.std
 
-
+# TODO: maybe refactor this monstrous function
 def build_model_and_losses(
         device,
         style_img,
         content_img,
-        use_avg_pool = True,
+        use_avg_pool=True,
         content_layers=content_layers_default,
         style_layers=style_layers_default,
     ):
+
     cnn = models.vgg19(pretrained=True).features.to(device).eval()
 
     cnn_normalization_mean = torch.tensor([0.485, 0.456, 0.406]).to(device)
@@ -100,9 +101,8 @@ def build_model_and_losses(
     # to put in modules that are supposed to be activated sequentially
     model = nn.Sequential(normalization)
 
-    tv_loss_module = TotalVariationLoss()
-    model.add_module("total_variation_loss", tv_loss_module)
-    tv_loss = tv_loss_module
+    tv_loss = TotalVariationLoss()
+    model.add_module("total_variation_loss", tv_loss)
 
     i = 1 # increment every time we see a conv
     j = 0 # increment every time we see a pool
@@ -150,10 +150,10 @@ def build_model_and_losses(
             style_ind += 1
 
     # now we trim off the layers after the last content and style losses
-    for i in range(len(model) - 1, -1, -1):
-        if isinstance(model[i], ContentLoss) or isinstance(model[i], StyleLoss):
+    for k in range(len(model) - 1, -1, -1):
+        if isinstance(model[k], ContentLoss) or isinstance(model[k], StyleLoss):
             break
 
-    model = model[: (i + 1)]
+    model = model[: (k + 1)]
 
     return model, style_losses, content_losses, tv_loss
