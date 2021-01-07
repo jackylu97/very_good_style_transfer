@@ -12,7 +12,7 @@ OUTPUT_PATH = f"./{OUTPUT_DIR}/{{}}"
 def calc_img_size(size, mx):
     # get height, width with same aspect ratio, given that no dimension can exceed mx
     assert len(size) == 2, "image should have dim=2 !!"
-    h,w = size
+    h, w = size
 
     if h > w and h > mx:
         w = (float(mx) / float(h)) * w
@@ -34,7 +34,7 @@ class ImageLoader:
         self.imsize = imsize
         self.loader = transforms.Compose(
             [transforms.Resize(imsize, interpolation=Image.BILINEAR),
-            transforms.ToTensor()]  # scale imported image
+             transforms.ToTensor()]  # scale imported image
         )  # transform it into a torch tensor
         self.unloader = transforms.ToPILImage()  # reconvert into PIL image
 
@@ -44,7 +44,7 @@ class ImageLoader:
         self.init_loaders(imsize)
         image = self.loader(image).unsqueeze(0)
         return image.to(self.device, torch.float)
-        
+
     def load_style_img(self, image_name):
         # automatically resizes style image to the size of the content_img
         # this is done to run content / style losses on the same execution graph

@@ -23,6 +23,7 @@ default_config = StyleConfig()
 styler = Styler(default_config)
 
 output = styler.style(
+    device,
     content_img,
     style_img,
 )

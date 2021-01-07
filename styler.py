@@ -11,9 +11,6 @@ import os
 
 from model import build_model_and_losses
 
-# set device
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
 @dataclass
 class StyleConfig:
     '''
@@ -36,9 +33,10 @@ class Styler:
     Initialize with a StyleConfig instance.
     See style_single_image.py for an example of usage.
     '''
-    def __init__(self, cfg):
+    def __init__(self, device, cfg):
         self._validate_config(cfg)
         self.cfg = cfg
+        self.device = device
 
     def _validate_config(self, cfg):
         assert len(cfg.style_layers) == len(cfg.style_layer_weights), (
@@ -56,7 +54,7 @@ class Styler:
 
         print("Building the style transfer model..")
         model, style_losses, content_losses, tv_loss = build_model_and_losses(
-            device,
+            self.device,
             style_img,
             content_img,
             self.cfg.use_avg_pool,
