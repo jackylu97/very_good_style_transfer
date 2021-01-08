@@ -1,6 +1,9 @@
 # python venv, as in setup.sh
 pt-env/
 
+# output
+output/
+
 # code editor environment
 .vscode
 

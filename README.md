@@ -1,6 +1,6 @@
 ## very_good_style_transfer
 
-This is a pytorch implementation of the Neural Style algorithm. This implementation is meant to be lightweight and create favorable abstractions towards implementing more complex operations involving style transfer. 
+This is a pytorch implementation of the Neural Style algorithm. This implementation is meant to be modular and enforce abstractions to easily programmatically perform style transfer with other operations. Other libraries I've used opt for command line tool implementations, which make it cumbersome to write scripts that involve multiple style transfers, for example.
 
 Builds off of example code from https://pytorch.org/tutorials/advanced/neural_style_tutorial.html
 
@@ -31,6 +31,5 @@ TODO:
 - add ability to use multiple style images with weights
 - add option to normalize weights
 - add option to normalize gradients
-- callback system to add intermediate computations between style transfer iterations
-- basic image/canvas manipulation commands
+- improve PIL -> torch interface; fold that logic into Styler instead of calling Util directly
 - figure out looping zoom ? 

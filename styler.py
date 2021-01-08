@@ -16,12 +16,20 @@ class StyleConfig:
     '''
     Style Transfer settings. One config per Styler instance.
     '''
-    # pylint: disable=too-many-instance-attributes
     num_iters: int = 250
+
+    # use average pooling in VGG-19 as opposed to max pooling
     use_avg_pool: bool = True
+
+    # can take values of 'noise', 'content' or 'custom
+    init_img_type: str = 'content'
+
+    # weight parameters
     content_weight: int = 5e0
     style_weight: int = 1e6
     tv_weight: int = 1e-4
+
+    # layer parameters
     content_layers: List[str] = field(default_factory=lambda: ["conv4_2"])
     style_layers: List[str] = field(default_factory=lambda:
                                     ['relu1_1', 'relu2_1', 'relu3_1', 'relu4_1', 'relu5_1'])
@@ -41,6 +49,10 @@ class Styler:
     Initialize with a StyleConfig instance.
     See style_single_image.py for an example of usage.
     '''
+
+    # non modifiable configurations
+    non_modifiable = ["use_avg_pool", "content_layers", "style_layers"]
+
     def __init__(self, device, cfg):
         self._validate_config(cfg)
         self.cfg = cfg
@@ -50,6 +62,21 @@ class Styler:
         assert len(cfg.style_layers) == len(cfg.style_layer_weights), (
             "style layer weights must correspond to style layers!")
 
+    def _choose_init_img(self, content_img, init_img):
+        if self.cfg.init_img_type == "noise":
+            return torch.randn(content_img.data.size(), device=self.device)
+        elif self.cfg.init_img_type == "custom" and init_img != None:
+            return init_img.clone()
+        elif self.cfg.init_img_type == "content":
+            return content_img.clone()
+        else:
+            raise Exception("Image initialization must be one of ['noise', 'custom', or 'content']. You must provide an 'init_img' argument to 'style' if choosing the 'custom' option. ")
+
+    def update_config(self, **kwargs):
+        if any([key in non_modifiable for key, _ in kwargs]):
+            raise Exception(f"Supplied one of following non_modifiable configurations: {non_modifiable}")
+        self.cfg.update(kwargs)
+
     def get_input_optimizer(self, input_img):
         # this line to show that input is a parameter that requires a gradient
         optimizer = optim.LBFGS([input_img.requires_grad_()])
@@ -57,12 +84,7 @@ class Styler:
 
     def style(self, content_img, style_img, init_img=None):
 
-        input_img = torch.randn(content_img.data.size(), device=self.device)
-        if init_img != None:
-            input_img = init_img.clone()
-        # Comment next two lines to use random noise as input
-        else:
-            input_img = content_img.clone()
+        input_img = self._choose_init_img(content_img, init_img)
 
         print("Building the style transfer model..")
         model, style_losses, content_losses, tv_loss = build_model_and_losses(

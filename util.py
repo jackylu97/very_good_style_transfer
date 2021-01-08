@@ -40,26 +40,28 @@ class ImageLoader:
         '''
         self.max_dimsize = max_dimsize
         self.device = device
-
-    def init_loaders(self, imsize):
-        self.imsize = imsize
-        self.loader = transforms.Compose(
+        self.loader = lambda imsize: transforms.Compose(
             [transforms.Resize(imsize, interpolation=Image.BILINEAR), # scale imported image
              transforms.ToTensor()]  # transform it into a torch tensor
         )
-        self.unloader = transforms.ToPILImage()  # reconvert into PIL image
+        self.unloader = transforms.ToPILImage() # reconvert into PIL image
+
+    def load(self, image, imsize):
+        # PIL Image object to tensor, resized
+        # resize -> tensor -> add batch dim -> mount to gpu
+        return (self.loader(imsize)(image)).unsqueeze(0).to(self.device, torch.float)
+
+    def unload(self, tensor):
+        # tensor to PIL Image object
+        # mount cpu -> remove batch dim -> reconvert to PIL image
+        return self.unloader(tensor.cpu().clone().squeeze(0))
 
     def resize_image_octave(self, image, octave):
-        # torch tensor -> PIL.Image -> resize -> back to torch tensor
         # there might be an easier way to do this but. eh.
         image = self.unload(image)
         octave_resolution = calc_octave_resolution(self.max_dimsize, octave)
         imsize = calc_img_size(image.size, octave_resolution)
-        t = transforms.Compose(
-            [transforms.Resize(imsize, interpolation=Image.BILINEAR), # scale imported image
-             transforms.ToTensor()]  # transform it into a torch tensor
-        )
-        return t(image).unsqueeze(0).to(self.device, torch.float)
+        return self.load(image, imsize)
 
     def load_content_style_imgs(self, content_img_name, style_img_name, octave=0.0):
         '''
@@ -74,32 +76,17 @@ class ImageLoader:
         # calculate image size, given max dimension size
         imsize = calc_img_size(content_image.size, octave_resolution)
 
-        self.init_loaders(imsize)
-
-        content_image = self.loader(content_image).unsqueeze(0)
-        content_image = content_image.to(self.device, torch.float)
-
-        # self.loader automatically resizes style image to the size of the content image
-        # this is done to run content / style losses on the same execution graph
-        style_image = self.loader(style_image).unsqueeze(0)
-        style_image = style_image.to(self.device, torch.float)
+        content_image = self.load(content_image, imsize)
+        style_image = self.load(style_image, imsize)
 
         return content_image, style_image
-
-    def unload(self, tensor):
-        image = tensor.cpu().clone()  # we clone the tensor to not do changes on it
-        image = image.squeeze(0)  # remove the fake batch dimension
-        image = self.unloader(image)
-        return image
 
     def imsave(self, tensor, name, filetype="png", config=None):
         '''
         Optionally supply a config to save corresponding StyleConfigs to a text file with
         the same name.
         '''
-        image = tensor.cpu().clone()  # we clone the tensor to not do changes on it
-        image = image.squeeze(0)  # remove the fake batch dimension
-        image = self.unloader(image)
+        image = self.unload(tensor)
         img_name = self.output_path(f"{name}.{filetype}")
         if not os.path.exists(os.path.abspath(OUTPUT_DIR)):
             os.mkdir(OUTPUT_DIR)

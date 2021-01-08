@@ -1,3 +1,9 @@
+import os
+import sys
+currentdir = os.path.dirname(os.path.realpath(__file__))
+parentdir = os.path.dirname(currentdir)
+sys.path.append(parentdir)
+
 from styler import StyleConfig, Styler
 import util
 
@@ -12,14 +18,20 @@ CONTENT_IMG_NAME = "lion.jpg"
 STYLE_IMG_NAME = "starry-night.jpg"
 OUTPUT_NAME = "test"
 
-output = None
+debug_params = dict(
+    num_iters=100,
+)
 
 default_config = StyleConfig()
+default_config.update(**debug_params)
 styler = Styler(device, default_config)
 
+output = None
 for octave in range(NUM_OCTAVES):
     loader = util.ImageLoader(IMSIZE, device)
-    content_img, style_img = loader.load_content_style_imgs(CONTENT_IMG_NAME, STYLE_IMG_NAME, octave)
+    content_img, style_img = loader.load_content_style_imgs(CONTENT_IMG_NAME,
+                                                            STYLE_IMG_NAME,
+                                                            octave)
     init_img = None
     if output != None:
         init_img = loader.resize_image_octave(output, octave)
