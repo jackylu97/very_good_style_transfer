@@ -3,6 +3,7 @@ from __future__ import print_function
 import torch
 import torch.optim as optim
 import torchvision.models as models
+import torch.nn.functional as F
 
 from dataclasses import dataclass, field
 from typing import List
@@ -10,6 +11,7 @@ import copy
 import os
 
 from model import build_model_and_losses
+import util
 
 @dataclass
 class StyleConfig:
@@ -17,6 +19,9 @@ class StyleConfig:
     Style Transfer settings. One config per Styler instance.
     '''
     num_iters: int = 250
+
+    # size of largest dimension in rendered output
+    max_dimsize: int = 256
 
     # use average pooling in VGG-19 as opposed to max pooling
     use_avg_pool: bool = True
@@ -38,6 +43,7 @@ class StyleConfig:
     def update(self, **kwargs):
         '''
         Convenient update function, due to the numerous arguments in StyleConfig.
+        Please call Styler.update_config() if a Styler instance has already been initialized.
         '''
         for key, value in kwargs.items():
             if hasattr(self, key):
@@ -53,38 +59,35 @@ class Styler:
     # non modifiable configurations
     non_modifiable = ["use_avg_pool", "content_layers", "style_layers"]
 
-    def __init__(self, device, cfg):
+    def __init__(self,
+                 cfg: StyleConfig,
+                 device):
         self._validate_config(cfg)
         self.cfg = cfg
         self.device = device
+        self.loader = util.ImageLoader(device)
 
-    def _validate_config(self, cfg):
+    def _validate_config(self, cfg: StyleConfig):
         assert len(cfg.style_layers) == len(cfg.style_layer_weights), (
             "style layer weights must correspond to style layers!")
 
-    def _choose_init_img(self, content_img, init_img):
+    def _choose_init_img(self, content_img, init_img, dimsize):
         if self.cfg.init_img_type == "noise":
             return torch.randn(content_img.data.size(), device=self.device)
         elif self.cfg.init_img_type == "custom" and init_img != None:
-            return init_img.clone()
+            return self.loader.load(init_img, dimsize)
         elif self.cfg.init_img_type == "content":
-            return content_img.clone()
+            return self.loader.load(content_img, dimsize)
         else:
-            raise Exception("Image initialization must be one of ['noise', 'custom', or 'content']. You must provide an 'init_img' argument to 'style' if choosing the 'custom' option. ")
+            raise Exception("Image initialization must be one of ['noise', 'custom', or 'content']."
+                            + " You must provide an 'init_img' argument to 'style' if choosing the "
+                            + "'custom' option.")
 
-    def update_config(self, **kwargs):
-        if any([key in non_modifiable for key, _ in kwargs]):
-            raise Exception(f"Supplied one of following non_modifiable configurations: {non_modifiable}")
-        self.cfg.update(kwargs)
-
-    def get_input_optimizer(self, input_img):
-        # this line to show that input is a parameter that requires a gradient
-        optimizer = optim.LBFGS([input_img.requires_grad_()])
-        return optimizer
-
-    def style(self, content_img, style_img, init_img=None):
-
-        input_img = self._choose_init_img(content_img, init_img)
+    def _style(self, content_img, style_img, init_img):
+        '''
+        accepts and outputs well-formatted pytorch tensors
+        '''
+        input_img = init_img
 
         print("Building the style transfer model..")
         model, style_losses, content_losses, tv_loss = build_model_and_losses(
@@ -141,3 +144,50 @@ class Styler:
         input_img.data.clamp_(0, 1)
 
         return input_img
+
+    def update_config(self, **kwargs):
+        if any([key in non_modifiable for key, _ in kwargs]):
+            raise Exception(f"Supplied one of following non_modifiable configurations: "
+                            + "{non_modifiable}")
+        self.cfg.update(kwargs)
+        if "imsize" in kwargs.keys():
+            self.loader = util.ImageLoader(self.cfg.imsize, self.device)
+
+    def get_input_optimizer(self, input_img):
+        # this line to show that input is a parameter that requires a gradient
+        optimizer = optim.LBFGS([input_img.requires_grad_()])
+        return optimizer
+
+    def style(self, content_img, style_img, init_img=None):
+        content, style = self.loader.load_content_style_imgs(content_img,
+                                                             style_img,
+                                                             self.cfg.max_dimsize)
+        init = self._choose_init_img(content_img, init_img, self.cfg.max_dimsize)
+        output = self._style(content, style, init)
+        return self.loader.unload(output)
+
+    def style_multiscale(self,
+                         content_img,
+                         style_img,
+                         init_img=None,
+                         octaves=3,
+                         save_intermediate=False):
+        '''
+        Perform style transfer on images of iteratively greater size. Produces a more
+        stable output for higher resolutions.
+        '''
+
+        for octave in range(octaves):
+            dimsize = util.calc_octave_resolution(self.cfg.max_dimsize, octave, octaves)
+            content, style = self.loader.load_content_style_imgs(content_img,
+                                                                 style_img,
+                                                                 dimsize)
+            if octave == 0:
+                init = self._choose_init_img(content_img, init_img, dimsize)
+            else:
+                _, _, h, w = content.size()
+                init = F.interpolate(init, size=(h, w)).detach()
+            init = self._style(content, style, init)
+            if save_intermediate:
+                util.imsave(self.loader.unload(init), f"multiscale_intermediate_{octave}")
+        return self.loader.unload(init)

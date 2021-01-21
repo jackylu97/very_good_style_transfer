@@ -4,11 +4,21 @@ import torchvision.transforms as transforms
 from PIL import Image
 from dataclasses import is_dataclass
 import os
+import math
 
 CONTENT_PATH = "./content/{}"
 STYLE_PATH = "./style/{}"
 OUTPUT_DIR = "output"
 OUTPUT_PATH = f"./{OUTPUT_DIR}/{{}}"
+
+def content_img_path(image_name):
+    return CONTENT_PATH.format(image_name)
+
+def style_img_path(image_name):
+    return STYLE_PATH.format(image_name)
+
+def output_path(image_name):
+    return OUTPUT_PATH.format(image_name)
 
 def calc_img_size(size, mx):
     # get height, width with same aspect ratio, setting the larger dimension to mx
@@ -22,23 +32,32 @@ def calc_img_size(size, mx):
         h = (float(mx) / float(w)) * h
         return (mx, int(h))
 
-def calc_octave_resolution(initial_resolution, octave):
+def calc_octave_resolution(final_resolution, octave, num_octaves):
+    return int(final_resolution / (math.sqrt(2) ** (num_octaves - octave - 1)))
+
+def imsave(image, name, filetype="png", config=None):
     '''
-    Double in size every 2 octaves
+    Optionally supply a config to save corresponding StyleConfigs to a text file with
+    the same name.
     '''
-    return int(initial_resolution * 1.415 ** (octave))
+    img_name = OUTPUT_PATH.format(f"{name}.{filetype}")
+    if not os.path.exists(os.path.abspath(OUTPUT_DIR)):
+        os.mkdir(OUTPUT_DIR)
+    if config:
+        assert is_dataclass(config)
+        with open(f'{name}.txt', 'w') as file:
+            file.write(json.dumps(asdict(config)))
+    image.save(img_name)
 
 class ImageLoader:
 
     def __init__(self,
-                 max_dimsize,
                  device=torch.device("cuda" if torch.cuda.is_available() else "cpu")):
         '''
         Arg max_dimsize corresponds to the largest pixel length allowed in any dimension of the
         image. If using 'octave' parameter, initialise max_dimsize to be the size of the first
         octave.
         '''
-        self.max_dimsize = max_dimsize
         self.device = device
         self.loader = lambda imsize: transforms.Compose(
             [transforms.Resize(imsize, interpolation=Image.BILINEAR), # scale imported image
@@ -56,51 +75,14 @@ class ImageLoader:
         # mount cpu -> remove batch dim -> reconvert to PIL image
         return self.unloader(tensor.cpu().clone().squeeze(0))
 
-    def resize_image_octave(self, image, octave):
-        # there might be an easier way to do this but. eh.
-        image = self.unload(image)
-        octave_resolution = calc_octave_resolution(self.max_dimsize, octave)
-        imsize = calc_img_size(image.size, octave_resolution)
-        return self.load(image, imsize)
-
-    def load_content_style_imgs(self, content_img_name, style_img_name, octave=0.0):
+    def load_content_style_imgs(self, content_image, style_image, max_dimsize):
         '''
         Always couple loading content/style images, since they need to be the same size anyways
         '''
-        content_image = Image.open(self.content_img_path(content_img_name))
-        style_image = Image.open(self.style_img_path(style_img_name))
-
-        # calculate octave resolution of max dimension size
-        octave_resolution = calc_octave_resolution(self.max_dimsize, octave)
-
         # calculate image size, given max dimension size
-        imsize = calc_img_size(content_image.size, octave_resolution)
+        imsize = calc_img_size(content_image.size, max_dimsize)
 
         content_image = self.load(content_image, imsize)
         style_image = self.load(style_image, imsize)
 
         return content_image, style_image
-
-    def imsave(self, tensor, name, filetype="png", config=None):
-        '''
-        Optionally supply a config to save corresponding StyleConfigs to a text file with
-        the same name.
-        '''
-        image = self.unload(tensor)
-        img_name = self.output_path(f"{name}.{filetype}")
-        if not os.path.exists(os.path.abspath(OUTPUT_DIR)):
-            os.mkdir(OUTPUT_DIR)
-        if config:
-            assert is_dataclass(config)
-            with open(f'{name}.txt', 'w') as file:
-                file.write(json.dumps(asdict(config)))
-        image.save(img_name)
-
-    def content_img_path(self, image_name):
-        return CONTENT_PATH.format(image_name)
-
-    def style_img_path(self, image_name):
-        return STYLE_PATH.format(image_name)
-
-    def output_path(self, image_name):
-        return OUTPUT_PATH.format(image_name)

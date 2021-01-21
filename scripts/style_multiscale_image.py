@@ -8,39 +8,32 @@ from styler import StyleConfig, Styler
 import util
 
 import torch
+from PIL import Image
 
-device = torch.device("cuda")
-
-IMSIZE = 256 if torch.cuda.is_available() else 128  # use small size if no gpu
-NUM_OCTAVES = 3
+# set device
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 CONTENT_IMG_NAME = "lion.jpg"
 STYLE_IMG_NAME = "starry-night.jpg"
 OUTPUT_NAME = "test"
+NUM_OCTAVES = 3
 
-debug_params = dict(
-    num_iters=100,
-)
+params = {
+    "max_dimsize": 512,
+}
 
 default_config = StyleConfig()
-default_config.update(**debug_params)
-styler = Styler(device, default_config)
+default_config.update(**params)
+styler = Styler(default_config, device)
 
-output = None
-for octave in range(NUM_OCTAVES):
-    loader = util.ImageLoader(IMSIZE, device)
-    content_img, style_img = loader.load_content_style_imgs(CONTENT_IMG_NAME,
-                                                            STYLE_IMG_NAME,
-                                                            octave)
-    init_img = None
-    if output != None:
-        init_img = loader.resize_image_octave(output, octave)
+content_image = Image.open(util.content_img_path(CONTENT_IMG_NAME))
+style_image = Image.open(util.style_img_path(STYLE_IMG_NAME))
 
-    output = styler.style(
-        content_img,
-        style_img,
-        init_img=init_img
-    )
-    loader.imsave(output, name=OUTPUT_NAME + f"_debug_{octave}")
+output = styler.style_multiscale(
+    content_image,
+    style_image,
+    octaves=NUM_OCTAVES,
+    save_intermediate=True
+)
 
-loader.imsave(output, name=OUTPUT_NAME)
+util.imsave(output, name=OUTPUT_NAME)
